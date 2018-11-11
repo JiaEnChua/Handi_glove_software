@@ -63,7 +63,7 @@ static GPIO_InitTypeDef GPIO_InitStruct;
 int receivedValue=0;
 int adcValue=0;
 int prev=0;
-uint32_t adc[5], buffer[5], prevADC[5];
+uint32_t adc[10], prevADC[5];
 long int k=0;
 /* USER CODE END PV */
 
@@ -189,9 +189,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	// ADCDMA: 1600 ~ 2200
 	// ADCPoll: 2600 ~ 4200
-	for(int i=0; i<5; i++) {
-		turnLA(adc[i], i);
-	}
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -201,8 +198,21 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	if(htim->Instance == TIM2) {
+		turnServo1(adc[5]);
+	} else if(htim->Instance == TIM3) {
+		for(int i=0; i<5; i++) {
+			turnLA(adc[i], i);
+		}
+	}
 }
-
+void turnServo1(int v)
+{
+	v = v / (24);
+	// Testing make 200 steps to 20 steps
+	int pwm = servoInit + (v*10);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, pwm);
+}
 /* USER CODE END 0 */
 
 /**
@@ -246,12 +256,14 @@ int main(void)
   setupPressureFB();
   // 210k in for loop is the limit of linear actuator
   for(int i=0; i<5; i++) {
-		backwardLA(210000,i);
+	backwardLA(210000, i);
   }
 
 //  HAL_ADC_Start_DMA(&hadc, buffer, 2);
   HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
-//  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start_IT(&htim2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -262,7 +274,7 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-//		HAL_UART_Receive_IT(&huart1, &receivedValue, sizeof(receivedValue));
+//    HAL_UART_Receive_IT(&huart1, &receivedValue, sizeof(receivedValue));
 //	  if(adc[0] > 2000) {
 //		  turnLA();
 //	  }
@@ -370,14 +382,26 @@ static void MX_ADC_Init(void)
 static void MX_TIM2_Init(void)
 {
 
+  TIM_ClockConfigTypeDef sClockSourceConfig;
   TIM_MasterConfigTypeDef sMasterConfig;
   TIM_OC_InitTypeDef sConfigOC;
 
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 13;
+  htim2.Init.Prescaler = 2097;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 3200;
+  htim2.Init.Period = 1000;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
   if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -400,6 +424,16 @@ static void MX_TIM2_Init(void)
   }
 
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
