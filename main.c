@@ -63,7 +63,7 @@ static GPIO_InitTypeDef GPIO_InitStruct;
 int receivedValue=0;
 int adcValue=0;
 int prev=0;
-uint32_t adc[2], buffer[2];
+uint32_t adc[5], buffer[5], prevADC[5];
 long int k=0;
 /* USER CODE END PV */
 
@@ -109,52 +109,88 @@ void setupPressureFB()
 {
   /* GPIOC Periph clock enable */
 	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
-	GPIOC->MODER |= (GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0) ;
+	GPIOC->MODER |= (GPIO_MODER_MODER6_0 | GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0) ;
 	/* Configure PC8 and PC9 in output  mode  */
-	GPIOC->OTYPER &= ~(GPIO_OTYPER_OT_8 | GPIO_OTYPER_OT_9) ;
+	GPIOC->OTYPER &= ~(GPIO_OTYPER_OT_6 | GPIO_OTYPER_OT_7 | GPIO_OTYPER_OT_8 | GPIO_OTYPER_OT_9) ;
 	// Ensure push pull mode selected--default
-	GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPDR8|GPIO_PUPDR_PUPDR9);
+	GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPDR6|GPIO_PUPDR_PUPDR7|GPIO_PUPDR_PUPDR8|GPIO_PUPDR_PUPDR9);
 	//Ensure all pull up pull down resistors are disabled
 }
-void forwardLA(long int time)
+void forwardLA(long int time, int index)
 {
-	GPIOC->ODR = 0x0200;
+	if(index == 0) {
+		GPIOC->ODR = 0x0200;
+	} else if (index == 1) {
+		GPIOC->ODR = 0x0080;
+	} else if (index == 2) {
+		GPIOC->ODR = 0x0000;
+	} else if (index == 3) {
+		GPIOC->ODR = 0x0000;
+	} else if (index == 4) {
+		GPIOC->ODR = 0x0000;
+	}
 	//	Note: HAL_Delay function incur error which produce motor sound even when ADC value = 0
 	//	And timing is not precise by using delay function
 	for(k=0;k<time;k++) {}
 	GPIOC->ODR = 0x0000;
 }
-void backwardLA(long int time)
+void backwardLA(long int time, int index)
 {
-	GPIOC->ODR = 0x0100;
+	if(index == 0) {
+		GPIOC->ODR = 0x0100;
+	} else if (index == 1) {
+		GPIOC->ODR = 0x0040;
+	} else if (index == 2) {
+		GPIOC->ODR = 0x0000;
+	} else if (index == 3) {
+		GPIOC->ODR = 0x0000;
+	} else if (index == 4) {
+		GPIOC->ODR = 0x0000;
+	}
 	for(k=0;k<time;k++) {}
 	GPIOC->ODR = 0x0000;
 }
-void turnLA()
+//void turnLA()
+//{
+//	int v = (4200 - adc[0]);
+//	v = v/400;	// Round up integer to 0, 1, 2, 3, 4
+//	int diff = abs(prev-v);
+//	if (diff > 1) {
+//		// Experimental value = 50000 to set high time for Linear Actuator
+//		long int time = diff * 50000;
+//		if(prev > v) {
+//			backwardLA(time);
+//		} else {
+//			forwardLA(time);
+//		}
+//		prev = v;
+//	}
+//	adc[0] = 0;
+//}
+
+void turnLA(int v, int indexLA)
 {
-	// Set LA into 4 stages: 0->1, 1->2, 2->3, 3->4
-//	int v = (2200 - receivedValue);
-	int v = (4200 - receivedValue);
-	v = v/400;	// Round up integer to 0, 1, 2, 3, 4
-	int diff = abs(prev-v);
-	if (diff > 1) {
-		// Experimental value = 200000 to set high time for Linear Actuator
-		long int time = diff * 50000;
-		if(prev > v) {
-			backwardLA(time);
-		} else {
-			forwardLA(time);
+	if(v > 2000) {
+		v = (4200 - v) / 400; // Round up integer to 0, 1, 2, 3, 4
+		int diff = abs(prevADC[indexLA]-v);
+		if (diff > 1) {
+			long int time = diff * 50000; //50,000 is gotten from trial&error
+			if(prevADC[indexLA] > v) {
+				backwardLA(time, indexLA);
+			} else {
+				forwardLA(time, indexLA);
+			}
+			prevADC[indexLA] = v;
 		}
-		prev = v;
+		adc[indexLA] = 0;
 	}
-	receivedValue = 0;
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	// ADCDMA: 1600 ~ 2200
 	// ADCPoll: 2600 ~ 4200
-	if(receivedValue > 1000) {
-//		adcValue = (2200 - receivedValue);
+	for(int i=0; i<5; i++) {
+		turnLA(adc[i], i);
 	}
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
@@ -163,6 +199,10 @@ void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 }
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -202,13 +242,16 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
-  setupPressureFB();
-  // 800k in for loop is the limit of linear actuator
-  backwardLA(210000);
   setupLED();
+  setupPressureFB();
+  // 210k in for loop is the limit of linear actuator
+  for(int i=0; i<5; i++) {
+		backwardLA(210000,i);
+  }
 
 //  HAL_ADC_Start_DMA(&hadc, buffer, 2);
-  HAL_UART_Receive_DMA(&huart1, &receivedValue, sizeof(receivedValue));
+  HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
+//  HAL_TIM_Base_Start_IT(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -220,9 +263,10 @@ int main(void)
 
   /* USER CODE BEGIN 3 */
 //		HAL_UART_Receive_IT(&huart1, &receivedValue, sizeof(receivedValue));
-	  if(receivedValue > 1000) {
-		turnLA();
-	  }
+//	  if(adc[0] > 2000) {
+//		  turnLA();
+//	  }
+
   }
   /* USER CODE END 3 */
 
@@ -374,7 +418,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 2097;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 1000;
+  htim3.Init.Period = 100;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
@@ -401,7 +445,7 @@ static void MX_USART1_UART_Init(void)
 {
 
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 4800;
+  huart1.Init.BaudRate = 115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
