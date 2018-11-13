@@ -57,13 +57,13 @@ DMA_HandleTypeDef hdma_usart1_rx;
 /* Private variables ---------------------------------------------------------*/
 #include "stm32l152c_discovery.h"
 
-#define servoInit	2860
+#define servoInit	2
 static GPIO_InitTypeDef GPIO_InitStruct;
 
 int receivedValue=0;
 int adcValue=0;
 int prev=0;
-uint32_t adc[10], prevADC[5];
+uint32_t adc[10], prevADC[10];
 long int k=0;
 /* USER CODE END PV */
 
@@ -187,6 +187,7 @@ void turnLA(int v, int indexLA)
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+	// Pressure Sensor
 	// ADCDMA: 1600 ~ 2200
 	// ADCPoll: 2600 ~ 4200
 }
@@ -200,6 +201,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim->Instance == TIM2) {
 		turnServo1(adc[5]);
+		turnServo2(adc[6]);
 	} else if(htim->Instance == TIM3) {
 		for(int i=0; i<5; i++) {
 			turnLA(adc[i], i);
@@ -208,10 +210,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 }
 void turnServo1(int v)
 {
-	v = v / (24);
-	// Testing make 200 steps to 20 steps
-	int pwm = servoInit + (v*10);
+	// Potentiometer 90 degree, ADC = 1337
+	// Frequency = 50Hz, PWM range: 5 ~ 25 => 2.5% ~ 12.5% Duty Cycle
+	// 67 = 1337 / (25-5)
+	int pwm = servoInit + (v / 67);
 	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, pwm);
+}
+void turnServo2(int v)
+{
+	int pwm = servoInit + (v / 67);
+	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, pwm);
 }
 /* USER CODE END 0 */
 
@@ -255,14 +263,13 @@ int main(void)
   setupLED();
   setupPressureFB();
   // 210k in for loop is the limit of linear actuator
-  for(int i=0; i<5; i++) {
-	backwardLA(210000, i);
-  }
-
+//  for(int i=0; i<5; i++) {
+//	backwardLA(210000, i);
+//  }
 //  HAL_ADC_Start_DMA(&hadc, buffer, 2);
-  HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
-  HAL_TIM_Base_Start_IT(&htim3);
-  HAL_TIM_Base_Start_IT(&htim2);
+//  HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
+//  HAL_TIM_Base_Start_IT(&htim3);
+//  HAL_TIM_Base_Start_IT(&htim2);
 
   /* USER CODE END 2 */
 
@@ -278,7 +285,6 @@ int main(void)
 //	  if(adc[0] > 2000) {
 //		  turnLA();
 //	  }
-
   }
   /* USER CODE END 3 */
 
@@ -387,9 +393,9 @@ static void MX_TIM2_Init(void)
   TIM_OC_InitTypeDef sConfigOC;
 
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 2097;
+  htim2.Init.Prescaler = 209;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1000;
+  htim2.Init.Period = 200;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
