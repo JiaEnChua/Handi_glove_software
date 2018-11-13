@@ -48,7 +48,11 @@
 ADC_HandleTypeDef hadc;
 
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
+TIM_HandleTypeDef htim9;
+TIM_HandleTypeDef htim10;
+TIM_HandleTypeDef htim11;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
@@ -63,7 +67,8 @@ static GPIO_InitTypeDef GPIO_InitStruct;
 int receivedValue=0;
 int adcValue=0;
 int prev=0;
-uint32_t adc[10], prevADC[10];
+uint32_t adc[10], prevADC[5];
+uint32_t step[5];
 long int k=0;
 /* USER CODE END PV */
 
@@ -72,9 +77,13 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC_Init(void);
-static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_TIM10_Init(void);
+static void MX_TIM9_Init(void);
+static void MX_TIM11_Init(void);
                                     
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
@@ -150,39 +159,52 @@ void backwardLA(long int time, int index)
 	for(k=0;k<time;k++) {}
 	GPIOC->ODR = 0x0000;
 }
-//void turnLA()
-//{
-//	int v = (4200 - adc[0]);
-//	v = v/400;	// Round up integer to 0, 1, 2, 3, 4
-//	int diff = abs(prev-v);
-//	if (diff > 1) {
-//		// Experimental value = 50000 to set high time for Linear Actuator
-//		long int time = diff * 50000;
-//		if(prev > v) {
-//			backwardLA(time);
-//		} else {
-//			forwardLA(time);
-//		}
-//		prev = v;
-//	}
-//	adc[0] = 0;
-//}
-
-void turnLA(int v, int indexLA)
+void turnLA()
 {
-	if(v > 2000) {
-		v = (4200 - v) / 400; // Round up integer to 0, 1, 2, 3, 4
-		int diff = abs(prevADC[indexLA]-v);
-		if (diff > 1) {
-			long int time = diff * 50000; //50,000 is gotten from trial&error
-			if(prevADC[indexLA] > v) {
-				backwardLA(time, indexLA);
-			} else {
-				forwardLA(time, indexLA);
-			}
-			prevADC[indexLA] = v;
+	// 0b 0000 0000 0000 0000
+	//           98 76
+	if(adc[0] > 2000) {
+		adc[0] = (4200 - adc[0]) / 200;
+		if(adc[0] < prevADC[0]) {
+			GPIOC->ODR = 0x0100;
+			step[0] -= 1;
+		} else if(adc[0] > prevADC[0]) {
+			GPIOC->ODR = 0x0200;
+			step[0] += 1;
+		} else {
+			GPIOC->ODR = 0x0000;
 		}
-		adc[indexLA] = 0;
+		prevADC[0] = adc[0];
+	}
+	if(adc[1] > 2000) {
+		adc[1] = (4200 - adc[1]) / 200;
+		if(adc[1] < prevADC[1]) {
+			GPIOC->ODR |= 0x0040;
+			step[1] -= 1;
+		} else if(adc[1] > prevADC[1]) {
+			GPIOC->ODR |= 0x0080;
+			step[1] += 1;
+		} else {
+			GPIOC->ODR |= 0x0000;
+		}
+		prevADC[1] = adc[1];
+	}
+	if(step[0] > 0 && prevADC[0] == adc[0] && prevADC[0] == 0) {
+		GPIOC->ODR |= 0x0100;
+		step[0] -= 1;
+	}
+	if(step[1] > 0 && prevADC[1] == adc[1] && prevADC[1] == 0) {
+		GPIOC->ODR |= 0x0040;
+		step[1] -= 1;
+	}
+	if(step[2] > 0) {
+		step[2] -= 1;
+	}
+	if(step[3] > 0) {
+		step[3] -= 1;
+	}
+	if(step[4] > 0) {
+		step[4] -= 1;
 	}
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -202,10 +224,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	if(htim->Instance == TIM2) {
 		turnServo1(adc[5]);
 		turnServo2(adc[6]);
-	} else if(htim->Instance == TIM3) {
-		for(int i=0; i<5; i++) {
-			turnLA(adc[i], i);
-		}
+	} else if(htim->Instance == TIM6) {
+		turnLA();
 	}
 }
 void turnServo1(int v)
@@ -254,22 +274,27 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_ADC_Init();
-  MX_TIM3_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_TIM10_Init();
+  MX_TIM9_Init();
+  MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   setupLED();
   setupPressureFB();
   // 210k in for loop is the limit of linear actuator
-//  for(int i=0; i<5; i++) {
-//	backwardLA(210000, i);
-//  }
+  for(int i=0; i<5; i++) {
+	backwardLA(210000, i);
+  }
 //  HAL_ADC_Start_DMA(&hadc, buffer, 2);
-//  HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
-//  HAL_TIM_Base_Start_IT(&htim3);
-//  HAL_TIM_Base_Start_IT(&htim2);
+  HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
+  HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_Base_Start_IT(&htim2);
 
   /* USER CODE END 2 */
 
@@ -281,10 +306,6 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-//    HAL_UART_Receive_IT(&huart1, &receivedValue, sizeof(receivedValue));
-//	  if(adc[0] > 2000) {
-//		  turnLA();
-//	  }
   }
   /* USER CODE END 3 */
 
@@ -448,32 +469,128 @@ static void MX_TIM2_Init(void)
 
 }
 
-/* TIM3 init function */
-static void MX_TIM3_Init(void)
+/* TIM6 init function */
+static void MX_TIM6_Init(void)
 {
 
-  TIM_ClockConfigTypeDef sClockSourceConfig;
   TIM_MasterConfigTypeDef sMasterConfig;
 
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 2097;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 100;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 2097;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 100;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM7 init function */
+static void MX_TIM7_Init(void)
+{
+
+  TIM_MasterConfigTypeDef sMasterConfig;
+
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 2097;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 100;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM9 init function */
+static void MX_TIM9_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+  TIM_MasterConfigTypeDef sMasterConfig;
+
+  htim9.Instance = TIM9;
+  htim9.Init.Prescaler = 0;
+  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim9.Init.Period = 0;
+  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim9, &sMasterConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM10 init function */
+static void MX_TIM10_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = 0;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 0;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim10, &sClockSourceConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM11 init function */
+static void MX_TIM11_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+
+  htim11.Instance = TIM11;
+  htim11.Init.Prescaler = 0;
+  htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim11.Init.Period = 0;
+  htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim11, &sClockSourceConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
