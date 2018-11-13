@@ -48,11 +48,8 @@
 ADC_HandleTypeDef hadc;
 
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim6;
-TIM_HandleTypeDef htim7;
-TIM_HandleTypeDef htim9;
+TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim10;
-TIM_HandleTypeDef htim11;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
@@ -61,14 +58,14 @@ DMA_HandleTypeDef hdma_usart1_rx;
 /* Private variables ---------------------------------------------------------*/
 #include "stm32l152c_discovery.h"
 
-#define servoInit	2
+#define servoInit 2
 static GPIO_InitTypeDef GPIO_InitStruct;
 
 int receivedValue=0;
 int adcValue=0;
 int prev=0;
 uint32_t adc[10], prevADC[5];
-uint32_t step[5];
+uint32_t curstep[5], prevStep[5], expectedStep[5];
 long int k=0;
 /* USER CODE END PV */
 
@@ -79,11 +76,8 @@ static void MX_DMA_Init(void);
 static void MX_ADC_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_TIM6_Init(void);
-static void MX_TIM7_Init(void);
+static void MX_TIM3_Init(void);
 static void MX_TIM10_Init(void);
-static void MX_TIM9_Init(void);
-static void MX_TIM11_Init(void);
                                     
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
@@ -117,101 +111,99 @@ void setupLED()
 void setupPressureFB()
 {
   /* GPIOC Periph clock enable */
-	RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
-	GPIOC->MODER |= (GPIO_MODER_MODER6_0 | GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0) ;
-	/* Configure PC8 and PC9 in output  mode  */
-	GPIOC->OTYPER &= ~(GPIO_OTYPER_OT_6 | GPIO_OTYPER_OT_7 | GPIO_OTYPER_OT_8 | GPIO_OTYPER_OT_9) ;
-	// Ensure push pull mode selected--default
-	GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPDR6|GPIO_PUPDR_PUPDR7|GPIO_PUPDR_PUPDR8|GPIO_PUPDR_PUPDR9);
-	//Ensure all pull up pull down resistors are disabled
+  RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+  GPIOC->MODER |= (GPIO_MODER_MODER6_0 | GPIO_MODER_MODER7_0 | GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0) ;
+  /* Configure PC8 and PC9 in output  mode  */
+  GPIOC->OTYPER &= ~(GPIO_OTYPER_OT_6 | GPIO_OTYPER_OT_7 | GPIO_OTYPER_OT_8 | GPIO_OTYPER_OT_9) ;
+  // Ensure push pull mode selected--default
+  GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPDR6|GPIO_PUPDR_PUPDR7|GPIO_PUPDR_PUPDR8|GPIO_PUPDR_PUPDR9);
+  //Ensure all pull up pull down resistors are disabled
 }
 void forwardLA(long int time, int index)
 {
-	if(index == 0) {
-		GPIOC->ODR = 0x0200;
-	} else if (index == 1) {
-		GPIOC->ODR = 0x0080;
-	} else if (index == 2) {
-		GPIOC->ODR = 0x0000;
-	} else if (index == 3) {
-		GPIOC->ODR = 0x0000;
-	} else if (index == 4) {
-		GPIOC->ODR = 0x0000;
-	}
-	//	Note: HAL_Delay function incur error which produce motor sound even when ADC value = 0
-	//	And timing is not precise by using delay function
-	for(k=0;k<time;k++) {}
-	GPIOC->ODR = 0x0000;
+  if(index == 0) {
+    GPIOC->ODR = 0x0200;
+  } else if (index == 1) {
+    GPIOC->ODR = 0x0080;
+  } else if (index == 2) {
+    GPIOC->ODR = 0x0000;
+  } else if (index == 3) {
+    GPIOC->ODR = 0x0000;
+  } else if (index == 4) {
+    GPIOC->ODR = 0x0000;
+  }
+  //  Note: HAL_Delay function incur error which produce motor sound even when ADC value = 0
+  //  And timing is not precise by using delay function
+  for(k=0;k<time;k++) {}
+  GPIOC->ODR = 0x0000;
 }
 void backwardLA(long int time, int index)
 {
-	if(index == 0) {
-		GPIOC->ODR = 0x0100;
-	} else if (index == 1) {
-		GPIOC->ODR = 0x0040;
-	} else if (index == 2) {
-		GPIOC->ODR = 0x0000;
-	} else if (index == 3) {
-		GPIOC->ODR = 0x0000;
-	} else if (index == 4) {
-		GPIOC->ODR = 0x0000;
-	}
-	for(k=0;k<time;k++) {}
-	GPIOC->ODR = 0x0000;
+  if(index == 0) {
+    GPIOC->ODR = 0x0100;
+  } else if (index == 1) {
+    GPIOC->ODR = 0x0040;
+  } else if (index == 2) {
+    GPIOC->ODR = 0x0000;
+  } else if (index == 3) {
+    GPIOC->ODR = 0x0000;
+  } else if (index == 4) {
+    GPIOC->ODR = 0x0000;
+  }
+  for(k=0;k<time;k++) {}
+  GPIOC->ODR = 0x0000;
+}
+void resetLA(int time) {
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
+  for(k=0;k<time;k++) {}
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
 }
 void turnLA()
 {
-	// 0b 0000 0000 0000 0000
-	//           98 76
-	if(adc[0] > 2000) {
-		adc[0] = (4200 - adc[0]) / 200;
-		if(adc[0] < prevADC[0]) {
-			GPIOC->ODR = 0x0100;
-			step[0] -= 1;
-		} else if(adc[0] > prevADC[0]) {
-			GPIOC->ODR = 0x0200;
-			step[0] += 1;
-		} else {
-			GPIOC->ODR = 0x0000;
-		}
-		prevADC[0] = adc[0];
-	}
-	if(adc[1] > 2000) {
-		adc[1] = (4200 - adc[1]) / 200;
-		if(adc[1] < prevADC[1]) {
-			GPIOC->ODR |= 0x0040;
-			step[1] -= 1;
-		} else if(adc[1] > prevADC[1]) {
-			GPIOC->ODR |= 0x0080;
-			step[1] += 1;
-		} else {
-			GPIOC->ODR |= 0x0000;
-		}
-		prevADC[1] = adc[1];
-	}
-	if(step[0] > 0 && prevADC[0] == adc[0] && prevADC[0] == 0) {
-		GPIOC->ODR |= 0x0100;
-		step[0] -= 1;
-	}
-	if(step[1] > 0 && prevADC[1] == adc[1] && prevADC[1] == 0) {
-		GPIOC->ODR |= 0x0040;
-		step[1] -= 1;
-	}
-	if(step[2] > 0) {
-		step[2] -= 1;
-	}
-	if(step[3] > 0) {
-		step[3] -= 1;
-	}
-	if(step[4] > 0) {
-		step[4] -= 1;
-	}
+  // 0b 0000 0000 0000 0000
+  //           98 76
+  if(adc[0] > 2000) {
+    expectedStep[0] = (4200 - adc[0]) / 200;
+    if(curstep[0] < expectedStep[0]) {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+      curstep[0] += 1;
+    } else if(curstep[0] > expectedStep[0]) {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+      curstep[0] -= 1;
+    } else {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+    }
+  }
+  if(adc[1] > 2000) {
+    expectedStep[1] = (4200 - adc[1]) / 200;
+    if(curstep[1] < expectedStep[1]) {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_SET);
+      curstep[1] += 1;
+    } else if(curstep[1] > expectedStep[1]) {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
+      curstep[1] -= 1;
+    } else {
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_SET);
+    }
+  }
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	// Pressure Sensor
-	// ADCDMA: 1600 ~ 2200
-	// ADCPoll: 2600 ~ 4200
+  // Pressure Sensor
+  // ADCDMA: 1600 ~ 2200
+  // ADCPoll: 2600 ~ 4200
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
@@ -221,25 +213,29 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if(htim->Instance == TIM2) {
-		turnServo1(adc[5]);
-		turnServo2(adc[6]);
-	} else if(htim->Instance == TIM6) {
-		turnLA();
-	}
+  if(htim->Instance == TIM2) {
+    turnServo1(adc[5]);
+    turnServo2(adc[6]);
+  } else if(htim->Instance == TIM3) {
+    turnLA();
+  } else if(htim->Instance == TIM10) {
+    if(adc[0] > 4000 && adc[1] > 4000) {
+      resetLA(100000);
+    }
+  }
 }
 void turnServo1(int v)
 {
-	// Potentiometer 90 degree, ADC = 1337
-	// Frequency = 50Hz, PWM range: 5 ~ 25 => 2.5% ~ 12.5% Duty Cycle
-	// 67 = 1337 / (25-5)
-	int pwm = servoInit + (v / 67);
-	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, pwm);
+  // Potentiometer 90 degree, ADC = 1337
+  // Frequency = 50Hz, PWM range: 5 ~ 25 => 2.5% ~ 12.5% Duty Cycle
+  // 67 = 1337 / (25-5)
+  int pwm = servoInit + (v / 67);
+  __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, pwm);
 }
 void turnServo2(int v)
 {
-	int pwm = servoInit + (v / 67);
-	__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, pwm);
+  int pwm = servoInit + (v / 67);
+  __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, pwm);
 }
 /* USER CODE END 0 */
 
@@ -276,25 +272,19 @@ int main(void)
   MX_ADC_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
-  MX_TIM6_Init();
-  MX_TIM7_Init();
+  MX_TIM3_Init();
   MX_TIM10_Init();
-  MX_TIM9_Init();
-  MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   setupLED();
   setupPressureFB();
   // 210k in for loop is the limit of linear actuator
-  for(int i=0; i<5; i++) {
-	backwardLA(210000, i);
-  }
-//  HAL_ADC_Start_DMA(&hadc, buffer, 2);
+  resetLA(210000);
   HAL_UART_Receive_DMA(&huart1, adc, sizeof(adc));
-  HAL_TIM_Base_Start_IT(&htim6);
-  HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim10);
 
   /* USER CODE END 2 */
 
@@ -469,80 +459,32 @@ static void MX_TIM2_Init(void)
 
 }
 
-/* TIM6 init function */
-static void MX_TIM6_Init(void)
-{
-
-  TIM_MasterConfigTypeDef sMasterConfig;
-
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 2097;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 100;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/* TIM7 init function */
-static void MX_TIM7_Init(void)
-{
-
-  TIM_MasterConfigTypeDef sMasterConfig;
-
-  htim7.Instance = TIM7;
-  htim7.Init.Prescaler = 2097;
-  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim7.Init.Period = 100;
-  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/* TIM9 init function */
-static void MX_TIM9_Init(void)
+/* TIM3 init function */
+static void MX_TIM3_Init(void)
 {
 
   TIM_ClockConfigTypeDef sClockSourceConfig;
   TIM_MasterConfigTypeDef sMasterConfig;
 
-  htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 0;
-  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 0;
-  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 2097;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 100;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim9, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -556,9 +498,9 @@ static void MX_TIM10_Init(void)
   TIM_ClockConfigTypeDef sClockSourceConfig;
 
   htim10.Instance = TIM10;
-  htim10.Init.Prescaler = 0;
+  htim10.Init.Prescaler = 2097;
   htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim10.Init.Period = 0;
+  htim10.Init.Period = 5000;
   htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
   {
@@ -567,30 +509,6 @@ static void MX_TIM10_Init(void)
 
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
   if (HAL_TIM_ConfigClockSource(&htim10, &sClockSourceConfig) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-}
-
-/* TIM11 init function */
-static void MX_TIM11_Init(void)
-{
-
-  TIM_ClockConfigTypeDef sClockSourceConfig;
-
-  htim11.Instance = TIM11;
-  htim11.Init.Prescaler = 0;
-  htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim11.Init.Period = 0;
-  htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim11, &sClockSourceConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
