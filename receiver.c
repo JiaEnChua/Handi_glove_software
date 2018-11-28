@@ -56,6 +56,7 @@ TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim10;
 
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -382,7 +383,7 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim3);
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_TIM_Base_Start_IT(&htim10);
-//  HAL_UART_Receive_DMA(&huart3, adc, sizeof(adc));
+  HAL_UART_Receive_DMA(&huart3, adc, sizeof(adc));
   HAL_ADC_Start_DMA(&hadc, servo, 5);
   /* USER CODE END 2 */
 
@@ -730,6 +731,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
