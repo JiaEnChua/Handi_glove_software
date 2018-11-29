@@ -48,8 +48,6 @@
 ADC_HandleTypeDef hadc;
 DMA_HandleTypeDef hdma_adc;
 
-SPI_HandleTypeDef hspi2;
-
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim7;
@@ -71,6 +69,7 @@ int prev=0;
 int count=0;
 uint32_t adc[10], prevADC[5];
 uint32_t curstep[5], prevStep[5], expectedStep[5];
+uint32_t sensor[6];
 uint32_t servo[5], spiData[5];
 long int k=0;
 /* USER CODE END PV */
@@ -85,10 +84,7 @@ static void MX_TIM10_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_SPI2_Init(void);
-
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
-                                
+static void MX_TS_Init(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -122,7 +118,6 @@ void setupLED()
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
 }
 void setupPressureFB()
 {
@@ -289,14 +284,21 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	} else if(htim->Instance == TIM3) {
 		turnLA();
 	} else if(htim->Instance == TIM7) {
-		HAL_UART_Transmit(&huart3, servo, sizeof(servo), 100);
-//		spiData[0] = 0;
-//		spiData[1] = 1;
-//		spiData[2] = 2;
-//		spiData[3] = 3;
-//		spiData[4] = 4;
-//	  HAL_SPI_Transmit(&hspi2, spiData, sizeof(spiData), 100);
-
+		if(sensor[5] <= 4000) {
+			servo[0] = sensor[0];
+			servo[1] = sensor[1];
+			servo[2] = sensor[2];
+			servo[3] = sensor[3];
+			servo[4] = sensor[4];
+			HAL_UART_Transmit(&huart3, servo, sizeof(servo), 100);
+		} else {
+			spiData[0] = 3300;
+			spiData[1] = 3300;
+			spiData[2] = 3300;
+			spiData[3] = 3300;
+			spiData[4] = 3300;
+			HAL_UART_Transmit(&huart3, spiData, sizeof(spiData), 100);
+		}
 	} else if(htim->Instance == TIM10) {
 		if(adc[0] > 4000 && prevADC[0] > 4000) {
 			backward0();
@@ -371,7 +373,7 @@ int main(void)
   MX_ADC_Init();
   MX_TIM7_Init();
   MX_USART3_UART_Init();
-  MX_SPI2_Init();
+  MX_TS_Init();
   /* USER CODE BEGIN 2 */
 //  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 //  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -384,7 +386,7 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_TIM_Base_Start_IT(&htim10);
   HAL_UART_Receive_DMA(&huart3, adc, sizeof(adc));
-  HAL_ADC_Start_DMA(&hadc, servo, 5);
+  HAL_ADC_Start_DMA(&hadc, sensor, 6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -474,7 +476,7 @@ static void MX_ADC_Init(void)
   hadc.Init.LowPowerAutoPowerOff = ADC_AUTOPOWEROFF_DISABLE;
   hadc.Init.ChannelsBank = ADC_CHANNELS_BANK_A;
   hadc.Init.ContinuousConvMode = ENABLE;
-  hadc.Init.NbrOfConversion = 5;
+  hadc.Init.NbrOfConversion = 6;
   hadc.Init.DiscontinuousConvMode = DISABLE;
   hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
@@ -530,26 +532,11 @@ static void MX_ADC_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-}
-
-/* SPI2 init function */
-static void MX_SPI2_Init(void)
-{
-
-  /* SPI2 parameter configuration*/
-  hspi2.Instance = SPI2;
-  hspi2.Init.Mode = SPI_MODE_MASTER;
-  hspi2.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
-  hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi2.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi2) != HAL_OK)
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_6;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
@@ -562,7 +549,6 @@ static void MX_TIM2_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig;
   TIM_MasterConfigTypeDef sMasterConfig;
-  TIM_OC_InitTypeDef sConfigOC;
 
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 209;
@@ -580,43 +566,12 @@ static void MX_TIM2_Init(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
-
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-
-  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -700,6 +655,12 @@ static void MX_TIM10_Init(void)
 
 }
 
+/* TS init function */
+static void MX_TS_Init(void)
+{
+
+}
+
 /* USART3 init function */
 static void MX_USART3_UART_Init(void)
 {
@@ -745,8 +706,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
 }
 
