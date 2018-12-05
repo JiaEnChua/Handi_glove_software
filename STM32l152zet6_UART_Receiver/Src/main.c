@@ -70,7 +70,7 @@ int adcValue=0;
 int prev=0;
 int count=0;
 uint32_t adc[10], prevADC[5];
-uint32_t curstep[5], prevStep[5], expectedStep[5];
+uint32_t curstep[5], expectedStep[5];
 uint32_t sensor[6];
 uint32_t servo[5], spiData[5];
 long int k=0;
@@ -293,21 +293,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	} else if(htim->Instance == TIM3) {
 		turnLA();
 	} else if(htim->Instance == TIM7) {
-		if(sensor[5] <= 4000) {
-			servo[0] = sensor[0];
-			servo[1] = sensor[1];
-			servo[2] = sensor[2];
-			servo[3] = sensor[3];
-			servo[4] = sensor[4];
-			HAL_UART_Transmit(&huart3, servo, sizeof(servo), 100);
-		} else {
-			spiData[0] = 3300;
-			spiData[1] = 3300;
-			spiData[2] = 3300;
-			spiData[3] = 3300;
-			spiData[4] = 3300;
-			HAL_UART_Transmit(&huart3, spiData, sizeof(spiData), 100);
-		}
+//		if(sensor[5] <= 4000) {
+//			servo[0] = sensor[0];
+//			servo[1] = sensor[1];
+//			servo[2] = sensor[2];
+//			servo[3] = sensor[3];
+//			servo[4] = sensor[4];
+//			HAL_UART_Transmit(&huart3, servo, sizeof(servo), 100);
+//		} else {
+//			spiData[0] = 3300;
+//			spiData[1] = 3300;
+//			spiData[2] = 3300;
+//			spiData[3] = 3300;
+//			spiData[4] = 3300;
+//			HAL_UART_Transmit(&huart3, spiData, sizeof(spiData), 100);
+//		}
+		//3500 ~ 3143
+		//2300 ~ 1300
+		//3695 ~ 2660
+		//4037 ~ 2807
+		//3600 ~ 1900
+		servo[0] = sensor[0];
+		servo[1] = sensor[1];
+		servo[2] = sensor[2];
+		servo[3] = sensor[3];
+		servo[4] = sensor[4];
+		HAL_UART_Transmit(&huart3, servo, sizeof(servo), 100);
 	} else if(htim->Instance == TIM10) {
 		if(adc[0] > 4000 && prevADC[0] > 4000) {
 			backward0();
@@ -407,7 +418,7 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(LED3_GPIO_PORT, LED3_PIN);
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
 	  HAL_Delay(100);
   }
   /* USER CODE END 3 */

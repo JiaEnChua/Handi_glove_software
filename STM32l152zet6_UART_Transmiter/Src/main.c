@@ -60,7 +60,7 @@ DMA_HandleTypeDef hdma_usart3_rx;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 #include "stm32l152c_discovery.h"
-#define servoInit 2
+#define servoInit 5
 
 static GPIO_InitTypeDef GPIO_InitStruct;
 int ready=0;
@@ -119,11 +119,21 @@ void setupLED()
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim->Instance == TIM2) {
-	    turnServo1(4100-servo[0]);
-	    turnServo2(4100-servo[1]);
-	    turnServo3(4100-servo[2]);
-	    turnServo4(4100-servo[3]);
-	    turnServo5(4100-servo[4]);
+		if(servo[0] <= 3600) {
+		    turnServo1(3600-servo[0]);
+		}
+		if(servo[1] <= 2300) {
+		    turnServo2(2300-servo[1]);
+		}
+		if(servo[2] < 3700) {
+		    turnServo3(3700-servo[2]);
+		}
+		if(servo[3] < 4100) {
+		    turnServo4(4100-servo[3]);
+		}
+		if(servo[4] < 3600) {
+		    turnServo5(3600-servo[4]);
+		}
 	} else if(htim->Instance == TIM7) {
 		HAL_UART_Transmit(&huart3, adc, sizeof(adc), 100);
 	}
@@ -133,46 +143,46 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 }
 void turnServo1(int v)
 {
-  // Potentiometer 90 degree, ADC range = 1000
+  // Potentiometer 90 degree, ADC range = 3600 ~ 3000
   // Frequency = 50Hz, PWM range: 5 ~ 25 => 2.5% ~ 12.5% Duty Cycle
-  // 50 = 1000 / (25-5)
-  int pwm = servoInit + (v / 50);
+  // 30 = 600 / (25-5)
+  int pwm = servoInit + (v / 30);
   __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, pwm);
 }
 void turnServo2(int v)
 {
-  int pwm = servoInit + (v / 50);
-  pwm = abs(25-pwm);
+  // Potentiometer 90 degree, ADC range = 2300 ~ 1300
+  int pwm = v / 50;
+  pwm = abs(20-pwm) + servoInit;
   __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_3, pwm);
 }
 void turnServo3(int v)
 {
-  int pwm = servoInit + (v / 50);
-  pwm = abs(25-pwm);
+  // Potentiometer 90 degree, ADC range = 3700 ~ 2600
+  int pwm = v / 60;
+  pwm = abs(20-pwm) + servoInit;
   __HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_4, pwm);
 }
 void turnServo4(int v)
 {
-  int pwm = servoInit + (v / 40);
+  // Potentiometer 90 degree, ADC range = 4100 ~ 2800
+  int pwm = servoInit + (v / 65);
   __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, pwm);
 }
 void turnServo5(int v)
 {
-  int pwm = servoInit + (v / 50);
-  pwm = abs(25-pwm);
+  // Potentiometer 90 degree, ADC range = 3600 ~ 1900
+  int pwm = v / 85;
+  pwm = abs(20-pwm) + servoInit;
   __HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, pwm);
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	//USART3 receive noise
 }
 void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
 {
 }
-void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
-{
 
-}
 /* USER CODE END 0 */
 
 int main(void)
@@ -219,7 +229,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_ADC_Start_DMA(&hadc, adc, 10);
   HAL_UART_Receive_DMA(&huart3, servo, sizeof(servo));
-//  HAL_SPI_Receive_DMA(&hspi1, spiData, sizeof(spiData));
 
   /* USER CODE END 2 */
 
@@ -230,8 +239,8 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
-		HAL_Delay(5000);
+		HAL_GPIO_TogglePin(LED3_GPIO_PORT, LED3_PIN);
+		HAL_Delay(100);
   }
   /* USER CODE END 3 */
 
