@@ -54,6 +54,7 @@ TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim7;
 TIM_HandleTypeDef htim10;
+TIM_HandleTypeDef htim11;
 
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_rx;
@@ -71,9 +72,27 @@ int prev=0;
 int count=0;
 uint32_t adc[10], prevADC[5];
 uint32_t curstep[5], expectedStep[5];
-uint32_t sensor[6];
+uint32_t sensor[11];
 uint32_t servo[5], spiData[5];
 long int k=0;
+
+
+// Temperature PV
+int T_errorSum[5] = {0,0,0,0,0};
+uint32_t PeltierFlag = 0;
+uint32_t * temperature_fb = sensor+5;
+uint32_t * temperature_in = adc + 5;
+uint32_t HEATING	= 1;
+uint32_t	COOLING	= 0;
+
+uint32_t	PELTIER_1 =	0x01;
+uint32_t	PELTIER_2 =	0x02;
+uint32_t	PELTIER_3 =	0x04;
+uint32_t	PELTIER_4 =	0x08;
+uint32_t	PELTIER_5 =	0x10;
+
+uint32_t tempV = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -83,11 +102,12 @@ static void MX_DMA_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM10_Init(void);
-static void MX_ADC_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
+static void MX_ADC_Init(void);
+static void MX_TIM11_Init(void);
                                     
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
@@ -101,6 +121,146 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
+#include "pwm.h"
+
+
+//void FourPtAvg(uint32_t N, uint32_t * ADC_data, uint32_t ADC_data_buffer[][5], uint32_t * _ADC_buffer_pt, uint32_t * avg_data){
+//	uint32_t temp;
+//	for(int i=0; i<N; i++){
+//		ADC_data_buffer[*_ADC_buffer_pt][i] = ADC_data[i];
+//		temp=0;
+//		for(int j=0; j<4; j++){
+//			//sum up
+//			temp += ADC_data_buffer[j][i];
+//		}
+//		//do avg
+//		temp = temp >> 2;
+//		avg_data[i] = temp;
+//	}
+//	*_ADC_buffer_pt += 1;
+//}
+
+void PWM_Peltier_Control(uint32_t * avg_in_data, uint32_t * avg_fb_data, int * errorSum){
+	int PWM = 0;
+	int tempPWM;
+	uint32_t PeltierN = 1;
+	int e;
+	uint32_t HC = _COOLING;
+	for(int i=0; i<5; i++){
+			e = TemperatureLinearizeTable[avg_in_data[i]>>4]-TemperatureLinearizeTable[avg_fb_data[i]>>4];
+			errorSum[i] = errorSum[i]+e;
+			//limit the maximum number
+			if (errorSum[i]>10000){errorSum[i]=5000;}
+			else if(errorSum[i]<-5000){errorSum[i]=-5000;}
+
+			tempPWM = P_H*e + I_H*(errorSum[i])/I_D_H;
+			//choose Heating or Cooling and limit the PWM duty below period
+			if(tempPWM>PWM_LIMIT) {
+				PWM=PWM_LIMIT;
+				HC = _HEATING;
+			}else if(tempPWM>0) {
+				PWM=tempPWM;
+				HC = _HEATING;
+			}else if(tempPWM>(PWM_LIMIT *(-1))) {
+				PWM=tempPWM*(-1);
+				HC = _COOLING;
+			}else {
+				PWM= PWM_LIMIT;
+				HC = _COOLING;
+			}
+			PWM_Peltier_SetPWM(PeltierN, HC, PWM);
+
+//			PWM_Peltier_SetPWM(PeltierN, _COOLING, 0);
+
+		PWM_Peltier_Start(PeltierN);
+		PeltierN = PeltierN << 1; //switch to next Peltier Cooler
+	}
+}
+
+void PWM_Peltier_SetPWM(uint32_t PeltierN, uint32_t HC, uint32_t PWM){
+	if(PeltierN == _PELTIER_1){
+		if(HC == _HEATING){
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, PWM);
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, 0);
+		}else{
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_1, 0);
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_2, PWM);
+		}
+
+	}else if(PeltierN == _PELTIER_2){
+		if(HC == _HEATING){
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_3, PWM);
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_4, 0);
+		}else{
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_3, 0);
+			__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_4, PWM);
+		}
+	}else if(PeltierN == _PELTIER_3){
+		if(HC == _HEATING){
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_3, PWM);
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_4, 0);
+		}else{
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_3, 0);
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_4, PWM);
+		}
+	}else if(PeltierN == _PELTIER_4){
+		if(HC == _HEATING){
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, PWM);
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, 0);
+		}else{
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_1, 0);
+			__HAL_TIM_SetCompare(&htim4, TIM_CHANNEL_2, PWM);
+		}
+	}else{
+		if(HC == _HEATING){
+			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_3, PWM);
+			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_4, 0);
+		}else{
+			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_3, 0);
+			__HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_4, PWM);
+		}
+	}
+}
+
+void PWM_Peltier_Start(uint32_t PeltierN){
+	if(PeltierN == _PELTIER_1){
+		HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+		HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+	}else if(PeltierN == _PELTIER_2){
+		HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+		HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+	}else if(PeltierN == _PELTIER_3){
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+	}else if(PeltierN == _PELTIER_4){
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+		HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+	}else{
+		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+	}
+}
+
+void PWM_Peltier_SetPeltierArray(uint32_t PeltierArray, uint32_t PeltierArrayHC, uint32_t * PeltierArrayPWM){
+	if(PeltierArray & _PELTIER_1){
+		//set Peltier 1 pwm value
+		PWM_Peltier_SetPWM(_PELTIER_1, PeltierArrayHC & _PELTIER_1, PeltierArrayPWM[0]);
+	}if(PeltierArray & _PELTIER_2){
+		//PELTIER_2
+		PWM_Peltier_SetPWM(_PELTIER_2, PeltierArrayHC & _PELTIER_2, PeltierArrayPWM[1]);
+	}if(PeltierArray & _PELTIER_3){
+		//PELTIER_3
+		PWM_Peltier_SetPWM(_PELTIER_3, PeltierArrayHC & _PELTIER_3, PeltierArrayPWM[2]);
+	}if(PeltierArray & _PELTIER_4){
+		//PELTIER_4
+		PWM_Peltier_SetPWM(_PELTIER_4, PeltierArrayHC & _PELTIER_4, PeltierArrayPWM[3]);
+	}if(PeltierArray & _PELTIER_5){
+		//PELTIER_5
+		PWM_Peltier_SetPWM(_PELTIER_5, PeltierArrayHC & _PELTIER_5, PeltierArrayPWM[4]);
+	}
+}
+
+
 void setupLED()
 {
   LED3_GPIO_CLK_ENABLE();
@@ -290,10 +450,12 @@ void turnLA()
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if(htim->Instance == TIM2) {
+
 	} else if(htim->Instance == TIM3) {
-		turnLA();
+	} else if(htim->Instance == TIM4) {
+		PeltierFlag = !PeltierFlag;
 	} else if(htim->Instance == TIM7) {
-//		if(sensor[5] <= 4000) {
+//		if(sensor[10] <= 4000) {
 //			servo[0] = sensor[0];
 //			servo[1] = sensor[1];
 //			servo[2] = sensor[2];
@@ -308,11 +470,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //			spiData[4] = 3300;
 //			HAL_UART_Transmit(&huart3, spiData, sizeof(spiData), 100);
 //		}
-		//3500 ~ 3143
-		//2300 ~ 1300
-		//3695 ~ 2660
-		//4037 ~ 2807
-		//3600 ~ 1900
 		servo[0] = sensor[0];
 		servo[1] = sensor[1];
 		servo[2] = sensor[2];
@@ -341,6 +498,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		stop2();
 		stop3();
 		stop4();
+	} else if(htim->Instance == TIM11) {
+		turnLA();
 	}
 }
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -390,11 +549,12 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_TIM10_Init();
-  MX_ADC_Init();
   MX_TIM7_Init();
   MX_USART3_UART_Init();
   MX_TIM4_Init();
   MX_TIM5_Init();
+  MX_ADC_Init();
+  MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
 //  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 //  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -404,10 +564,12 @@ int main(void)
   resetLA(210000);
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start_IT(&htim4);
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_TIM_Base_Start_IT(&htim10);
+  HAL_TIM_Base_Start_IT(&htim11);
   HAL_UART_Receive_DMA(&huart3, adc, sizeof(adc));
-  HAL_ADC_Start_DMA(&hadc, sensor, 6);
+  HAL_ADC_Start_DMA(&hadc, sensor, 11);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -418,8 +580,12 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
-	  HAL_Delay(100);
+//	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
+//	  HAL_Delay(100);
+	  if(PeltierFlag == 0){
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_8);
+		  PWM_Peltier_Control(temperature_in, temperature_fb, T_errorSum);
+	  }
   }
   /* USER CODE END 3 */
 
@@ -497,7 +663,7 @@ static void MX_ADC_Init(void)
   hadc.Init.LowPowerAutoPowerOff = ADC_AUTOPOWEROFF_DISABLE;
   hadc.Init.ChannelsBank = ADC_CHANNELS_BANK_A;
   hadc.Init.ContinuousConvMode = ENABLE;
-  hadc.Init.NbrOfConversion = 6;
+  hadc.Init.NbrOfConversion = 11;
   hadc.Init.DiscontinuousConvMode = DISABLE;
   hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
@@ -563,8 +729,53 @@ static void MX_ADC_Init(void)
 
     /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
     */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_6;
   sConfig.Rank = ADC_REGULAR_RANK_6;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = ADC_REGULAR_RANK_7;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = ADC_REGULAR_RANK_8;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Rank = ADC_REGULAR_RANK_9;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = ADC_REGULAR_RANK_10;
+  if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+    /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+    */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_11;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -583,7 +794,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 209;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 200;
+  htim2.Init.Period = 1000;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
@@ -645,9 +856,9 @@ static void MX_TIM3_Init(void)
   TIM_OC_InitTypeDef sConfigOC;
 
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 2097;
+  htim3.Init.Prescaler = 209;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 100;
+  htim3.Init.Period = 1000;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
   {
@@ -709,9 +920,9 @@ static void MX_TIM4_Init(void)
   TIM_OC_InitTypeDef sConfigOC;
 
   htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 0;
+  htim4.Init.Prescaler = 209;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 0;
+  htim4.Init.Period = 1000;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
   {
@@ -773,9 +984,9 @@ static void MX_TIM5_Init(void)
   TIM_OC_InitTypeDef sConfigOC;
 
   htim5.Instance = TIM5;
-  htim5.Init.Prescaler = 0;
+  htim5.Init.Prescaler = 209;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 0;
+  htim5.Init.Period = 200;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
   {
@@ -870,6 +1081,30 @@ static void MX_TIM10_Init(void)
 
   sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
   if (HAL_TIM_ConfigClockSource(&htim10, &sClockSourceConfig) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
+/* TIM11 init function */
+static void MX_TIM11_Init(void)
+{
+
+  TIM_ClockConfigTypeDef sClockSourceConfig;
+
+  htim11.Instance = TIM11;
+  htim11.Init.Prescaler = 2097;
+  htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim11.Init.Period = 100;
+  htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim11, &sClockSourceConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }

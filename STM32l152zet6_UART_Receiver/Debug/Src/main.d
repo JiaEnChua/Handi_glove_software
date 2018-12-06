@@ -28,7 +28,8 @@ Src/main.o: ../Src/main.c \
  /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Drivers/STM32L1xx_HAL_Driver/Inc/stm32l1xx_hal_tim.h \
  /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Drivers/STM32L1xx_HAL_Driver/Inc/stm32l1xx_hal_tim_ex.h \
  /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Drivers/STM32L1xx_HAL_Driver/Inc/stm32l1xx_hal_uart.h \
- /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/stm32l152c_discovery.h
+ /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/stm32l152c_discovery.h \
+ /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/pwm.h
 
 /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/main.h:
 
@@ -89,3 +90,5 @@ Src/main.o: ../Src/main.c \
 /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Drivers/STM32L1xx_HAL_Driver/Inc/stm32l1xx_hal_uart.h:
 
 /Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/stm32l152c_discovery.h:
+
+/Users/jiaenchua/Desktop/STM32l152zet6_UART_Receiver/Inc/pwm.h:
